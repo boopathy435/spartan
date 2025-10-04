@@ -1,0 +1,157 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to get user role
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return getUserRole() == 'admin';
+    }
+    
+    
+    // Helper function to check if user is trainer or admin
+    function isTrainerOrAdmin() {
+      return getUserRole() == 'trainer' || getUserRole() == 'admin';
+    }
+    
+    // Users collection rules
+    match /users/{userId} {
+      // Users can read their own data
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Admins can read all user data
+      allow read: if request.auth != null && isAdmin();
+      
+      // Trainers can read members assigned to them
+      allow read: if request.auth != null 
+        && isTrainerOrAdmin() 
+        && resource.data.trainerId == request.auth.uid;
+      
+      // Users can create their own document (during signup)
+      allow create: if request.auth != null 
+        && request.auth.uid == userId 
+        && request.resource.data.role == 'member' // Only allow 'member' role on create
+        && request.resource.data.uid == userId;
+      
+      // Users can update their own profile data (displayName, photoURL) but not their role
+      allow update: if request.auth != null 
+        && request.auth.uid == userId 
+        && request.resource.data.role == resource.data.role // Role cannot be changed
+        && request.resource.data.uid == resource.data.uid // uid cannot be changed
+        && request.resource.data.email == resource.data.email; // Email cannot be changed
+      
+      // Only admins can change other users' roles
+      allow update: if request.auth != null 
+        && isAdmin() 
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email; // Email cannot be changed
+    }
+    
+    // Workouts collection rules
+    match /workouts/{workoutId} {
+      // Everyone can read workouts
+      allow read: if request.auth != null;
+      
+      // Only trainers and admins can create workouts
+      allow create: if request.auth != null 
+        && (isTrainerOrAdmin() || resource.data.createdBy == request.auth.uid);
+      
+      // Only the creator, trainers, and admins can update/delete workouts
+      allow update, delete: if request.auth != null 
+        && (isTrainerOrAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+    
+    // Workout Packages collection rules
+    match /workoutPackages/{packageId} {
+      // Everyone can read active packages
+      allow read: if request.auth != null;
+      
+      // Only trainers and admins can create packages
+      allow create: if request.auth != null 
+        && (isTrainerOrAdmin() || resource.data.createdBy == request.auth.uid);
+      
+      // Only the creator, trainers, and admins can update/delete packages
+      allow update, delete: if request.auth != null 
+        && (isTrainerOrAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+    
+    // Packages collection rules
+    match /packages/{packageId} {
+      // Everyone can read active packages
+      allow read: if request.auth != null;
+      
+      // Only trainers and admins can create packages
+      allow create: if request.auth != null 
+        && (isTrainerOrAdmin() || resource.data.createdBy == request.auth.uid);
+      
+      // Only the creator, trainers, and admins can update/delete packages
+      allow update, delete: if request.auth != null 
+        && (isTrainerOrAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+    
+    // Member Packages collection rules
+    match /memberPackages/{memberPackageId} {
+      // Members can read their own package assignments
+      allow read: if request.auth != null 
+        && (resource.data.memberId == request.auth.uid 
+            || resource.data.trainerId == request.auth.uid 
+            || isAdmin());
+      
+      // Only trainers and admins can assign packages to members
+      allow create: if request.auth != null 
+        && (isTrainerOrAdmin() || resource.data.trainerId == request.auth.uid);
+      
+      // Only trainers, admins, and the assigned member can update
+      allow update: if request.auth != null 
+        && (isTrainerOrAdmin() 
+            || resource.data.trainerId == request.auth.uid 
+            || resource.data.memberId == request.auth.uid);
+      
+      // Only trainers and admins can delete assignments
+      allow delete: if request.auth != null 
+        && (isTrainerOrAdmin() || resource.data.trainerId == request.auth.uid);
+    }
+    
+    // Member Progress collection rules
+    match /memberProgress/{progressId} {
+      // Members can read their own progress
+      allow read: if request.auth != null 
+        && (resource.data.memberId == request.auth.uid 
+            || isTrainerOrAdmin());
+      
+      // Members can create their own progress entries
+      allow create: if request.auth != null 
+        && resource.data.memberId == request.auth.uid;
+      
+      // Members can update their own progress, trainers can update their members' progress
+      allow update: if request.auth != null 
+        && (resource.data.memberId == request.auth.uid 
+            || isTrainerOrAdmin());
+      
+      // Only admins can delete progress entries
+      allow delete: if request.auth != null && isAdmin();
+    }
+    
+    // Profile images storage rules
+    match /profile-images/{userId} {
+      // Users can upload their own profile images
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Admins can read all profile images
+      allow read: if request.auth != null && isAdmin();
+    }
+    
+    // Example: Admin-only collections
+    match /admin/{document=**} {
+      allow read, write: if request.auth != null && isAdmin();
+    }
+    
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

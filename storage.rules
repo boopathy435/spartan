@@ -1,0 +1,21 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Profile images - users can upload their own profile images
+    match /profile-images/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Workout images - trainers can upload images for their workouts
+    match /workout-images/{trainerId} {
+      allow read, write: if request.auth != null && request.auth.uid == trainerId;
+    }
+    
+    // General files - authenticated users can upload
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+
